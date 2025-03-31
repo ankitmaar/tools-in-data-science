@@ -1,21 +1,56 @@
-MIT License
+// pages/api/index.js
 
-Copyright (c) 2025 ankitmaar
+import { IncomingForm } from 'formidable';
+import fs from 'fs';
+import csv from 'csv-parser';
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+export const config = {
+  api: {
+    bodyParser: false,
+  },
+};
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+export default async function handler(req, res) {
+  if (req.method === 'POST') {
+    const form = new IncomingForm();
+    form.uploadDir = './uploads';
+    form.keepExtensions = true;
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+    form.parse(req, async (err, fields, files) => {
+      if (err) {
+        return res.status(500).json({ error: 'File parsing error.' });
+      }
+
+      const question = fields.question;
+      const file = files.file;
+
+      if (!question) {
+        return res.status(400).json({ error: 'Question is required.' });
+      }
+
+      if (file && file.filepath) {
+        const filePath = file.filepath;
+        const results = [];
+
+        try {
+          fs.createReadStream(filePath)
+            .pipe(csv())
+            .on('data', (data) => results.push(data))
+            .on('end', () => {
+              const answer = results.find(row => row.answer)?.answer || 'Answer column not found.';
+              res.status(200).json({ answer });
+
+              // Clean up uploaded file
+              fs.unlinkSync(filePath);
+            });
+        } catch (error) {
+          return res.status(500).json({ error: 'Error processing file.' });
+        }
+      } else {
+        res.status(200).json({ answer: 'No file provided. Please upload a file if required.' });
+      }
+    });
+  } else {
+    res.status(405).json({ error: 'Method not allowed.' });
+  }
+}
